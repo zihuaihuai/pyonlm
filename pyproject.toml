@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=64", "wheel", "Cython>=3.0", "numpy>=1.23"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyonlm"
+version = "0.1.0"
+description = "NIfTI-native faithful reimplementation of EZminc mincnlm (Optimized Blockwise Non-Local Means, ONLM)"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "MICA / pyonlm contributors" }]
+keywords = ["MRI", "denoising", "non-local-means", "NLM", "ONLM", "mincnlm", "NIfTI"]
+dependencies = [
+    "numpy>=1.23",
+    "scipy>=1.7",
+    "nibabel>=3.2",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=7.0"]
+
+[project.scripts]
+pyonlm = "pyonlm.cli:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

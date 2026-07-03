@@ -1,0 +1,29 @@
+# Build artifacts
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Cython / C extension outputs
+src/pyonlm/_onlm.c
+*.so
+*.o
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+
+# Third-party reference C++ sources are fetched, not redistributed
+# (run reference/fetch_sources.sh). Keep only the README + fetch script.
+reference/ezminc/
+
+# Local validation artifacts
+validate/
