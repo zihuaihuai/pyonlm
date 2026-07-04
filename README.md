@@ -50,6 +50,13 @@ nib.save(nib.Nifti1Image(den, img.affine, img.header), "out.nii.gz")
 
 ## Equivalence with mincnlm
 
+See [`docs/BENCHMARK.md`](docs/BENCHMARK.md) for the full benchmark on 5 real 7T
+volumes (3 subjects × 3 modalities) with side-by-side images, timing, and thread
+scaling. Summary: pyonlm reproduces `mincnlm -mt 6 -sigma 0 -beta 1` to float32
+precision on every volume (correlation 1.0000000; 99.996–100% of voxels within
+0.1), and its automatic noise estimate matches mincnlm's `Noise=` to ≈6 significant
+figures.
+
 Validated against real `mincnlm` (minc-toolkit 1.9.18) on a 7T PNI MP2RAGE UNIT1
 volume (`sub-PNC001`, 0.5 mm, 320×488×520):
 
