@@ -1,13 +1,13 @@
 # pyonlm vs mincnlm — benchmark on real 7T data
 
-*Generated 2026-07-03.*
+*Generated 2026-07-04.*
 
 ## Summary
 
 - **Datasets:** 5 real 7T (0.5 mm MP2RAGE) volumes from the PNI BIDS dataset (`/data_/mica3/BIDS_PNI`), spanning 3 subjects and 3 modalities (UNIT1, T1map, inv-1 MP2RAGE).
 - **Equivalence:** pyonlm reproduces `mincnlm -mt 6 -sigma 0 -beta 1` to float32 precision on every volume — correlation ≥ 1.000000, 99.996–100.000% of voxels within an absolute difference of 0.1 on an intensity range of ~4000.
 - **Noise estimate:** the automatic (`-sigma 0`) DWT-based Rician estimate matches mincnlm's `Noise=` to a relative error ≤ 2.49e-06 (≈6 significant figures).
-- **Speed:** at equal thread count (`-mt 6`) pyonlm's total time is dominated by its *single-threaded* noise-estimate step; the denoise itself parallelises well (≈9× from 1→32 threads, see scaling). NOTE: this run shared the node with another user's heavy `antsRegistration` load (1-min load ≈ 98/128), which inflates all absolute wall times — treat the timing table as contended, not representative (a clean idle-node re-measurement is being collected). pyonlm's parallelism is race-free/deterministic; mincnlm's is not.
+- **Speed (representative, idle-ish node):** vs `mincnlm -mt 6` ≈ 368s, pyonlm totals ≈ 397s at -mt6 (0.93×), 290s at -mt16 (1.27×), 264s at -mt32 (1.39×). So it is on par at 6 threads and faster at 16–32; the denoise scales ≈11× (1→32 threads). pyonlm's serial noise-estimate (~a few minutes) is the main fixed cost, and its parallelism is race-free/deterministic (mincnlm's is not).
 
 ## Method
 
@@ -58,26 +58,39 @@ Both outputs are re-oriented to canonical RAS before comparison. Wall-clock time
 
 > ⚠️ **Timing caveat.** These wall times were collected on a *shared* compute node that was under heavy external load during the run (another user's `antsRegistration` jobs, 1-min load ≈ 98/128 cores). This inflates absolute times and, because pyonlm's **noise-estimate step is single-threaded**, it is hit hardest — it took 350–1500 s here versus ~135 s on an idle node. So the `speedup` column above is a pessimistic lower bound, not a fair idle-node comparison.
 
-**Where the time goes.** pyonlm's total = a serial noise-estimate (a 3D DWT on a power-of-two cube + an FFT Gaussian-gradient — currently single-threaded, the bottleneck and a clear future optimisation target) **plus** a well-parallelised denoise. On an idle node the primary volume (PNC001-UNIT1) denoised in ≈ 248 s at 16 threads (noise ≈ 135 s + denoise ≈ 113 s) versus mincnlm `-mt 6` ≈ 366 s — i.e. pyonlm was *faster* there. The scaling curve below shows the denoise step's parallel behaviour directly.
+**Where the time goes.** pyonlm's total = a serial noise-estimate (a 3D DWT on a power-of-two cube + an FFT Gaussian-gradient — currently single-threaded, the bottleneck and a clear future optimisation target) **plus** a well-parallelised denoise. The clean re-measurement below (idle-ish node) shows the representative picture; the scaling curve isolates the denoise step's parallel behaviour.
 
 ![timing](figures/timing.png)
 
+### Representative timing (idle-ish node)
+
+Re-measured on the primary volume (PNC001-UNIT1) once the node was much less loaded (1-min load ≈ 46/128). Here mincnlm `-mt 6` clocks 368 s; pyonlm's serial noise-estimate is a fixed 173 s and its denoise scales with threads:
+
+| run | noise (s) | denoise (s) | total (s) | vs mincnlm-mt6 |
+|---|---|---|---|---|
+| mincnlm -mt6 | — | — | 368 | 1.00× |
+| pyonlm -mt6 | 173 | 224 | 397 | 0.93× |
+| pyonlm -mt16 | 173 | 117 | 290 | 1.27× |
+| pyonlm -mt32 | 173 | 91 | 264 | 1.39× |
+
+pyonlm is on par with mincnlm at 6 threads and faster at 16–32; unlike mincnlm it can use all available cores. The single-threaded noise-estimate is the main remaining fixed cost (and an obvious optimisation target).
+
+![timing (clean)](figures/timing_clean.png)
+
 ### Thread scaling
 
-Denoise-only wall time on a 176×176×176 brain crop (noise estimate is a fixed one-off, excluded here):
+Denoise-only wall time on a 176×176×176 brain crop (the noise estimate is a fixed one-off, excluded here):
 
 | threads | denoise (s) | speedup |
 |---|---|---|
-| 1 | 60.95 | 1.00× |
-| 2 | 40.23 | 1.52× |
-| 4 | 27.43 | 2.22× |
-| 6 | 23.98 | 2.54× |
-| 8 | 36.61 | 1.67× |
-| 16 | 9.28 | 6.57× |
-| 32 | 6.55 | 9.31× |
-| 64 | 7.10 | 8.59× |
+| 1 | 54.01 | 1.00× |
+| 2 | 31.02 | 1.74× |
+| 4 | 17.68 | 3.05× |
+| 8 | 10.20 | 5.30× |
+| 16 | 6.49 | 8.32× |
+| 32 | 4.85 | 11.14× |
 
-The denoise scales ≈9× from 1→32 threads. (One non-monotonic point can appear under the shared-node contention noted above — e.g. an 8-thread run that lands while other jobs spike; the overall trend is clear.)
+The denoise scales ≈11× from 1→32 threads.
 
 ![scaling](figures/scaling.png)
 

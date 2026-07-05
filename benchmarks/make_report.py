@@ -16,10 +16,13 @@ def fmt(x, nd=3):
     return str(x)
 
 
-def main(bench_path, fig_dir, out_path):
+def main(bench_path, fig_dir, out_path, clean_path=None):
     b = json.load(open(bench_path))
     R = b["results"]; S = b.get("scaling", [])
     mt = b.get("mt", 6)
+    clean = json.load(open(clean_path)) if clean_path and os.path.exists(clean_path) else None
+    if clean and clean.get("scaling"):
+        S = clean["scaling"]  # prefer the clean (idle-ish node) scaling curve
     figs = set(os.listdir(fig_dir)) if os.path.isdir(fig_dir) else set()
     L = []
     A = L.append
@@ -42,13 +45,20 @@ def main(bench_path, fig_dir, out_path):
     A(f"- **Noise estimate:** the automatic (`-sigma 0`) DWT-based Rician estimate "
       f"matches mincnlm's `Noise=` to a relative error ≤ {fmt(max(nerr) if nerr else None,6)} "
       "(≈6 significant figures).")
-    A(f"- **Speed:** at equal thread count (`-mt {mt}`) pyonlm's total time is dominated "
-      "by its *single-threaded* noise-estimate step; the denoise itself parallelises "
-      "well (≈9× from 1→32 threads, see scaling). NOTE: this run shared the node with "
-      "another user's heavy `antsRegistration` load (1-min load ≈ 98/128), which inflates "
-      "all absolute wall times — treat the timing table as contended, not representative "
-      "(a clean idle-node re-measurement is being collected). pyonlm's parallelism is "
-      "race-free/deterministic; mincnlm's is not.\n")
+    if clean:
+        cm = clean["t_mincnlm_mt6"]; cn = clean["t_pyonlm_noise"]
+        t6 = cn + clean["t_pyonlm_denoise_mt6"]; t16 = cn + clean["t_pyonlm_denoise_mt16"]
+        t32 = cn + clean["t_pyonlm_denoise_mt32"]
+        A(f"- **Speed (representative, idle-ish node):** vs `mincnlm -mt {mt}` ≈ {cm:.0f}s, "
+          f"pyonlm totals ≈ {t6:.0f}s at -mt6 ({cm/t6:.2f}×), {t16:.0f}s at -mt16 "
+          f"({cm/t16:.2f}×), {t32:.0f}s at -mt32 ({cm/t32:.2f}×). So it is on par at 6 "
+          f"threads and faster at 16–32; the denoise scales ≈{S[0]['denoise_s']/S[-1]['denoise_s']:.0f}× "
+          "(1→32 threads). pyonlm's serial noise-estimate (~a few minutes) is the main fixed "
+          "cost, and its parallelism is race-free/deterministic (mincnlm's is not).\n")
+    else:
+        A(f"- **Speed:** at equal thread count (`-mt {mt}`) pyonlm's total time is dominated "
+          "by its *single-threaded* noise-estimate step; the denoise parallelises well. "
+          "pyonlm's parallelism is race-free/deterministic; mincnlm's is not.\n")
 
     A("## Method\n")
     A("For each volume the MICA 7T `denoiseNLM` step is reproduced two ways and "
@@ -102,25 +112,39 @@ def main(bench_path, fig_dir, out_path):
     A("**Where the time goes.** pyonlm's total = a serial noise-estimate (a 3D DWT on a "
       "power-of-two cube + an FFT Gaussian-gradient — currently single-threaded, the "
       "bottleneck and a clear future optimisation target) **plus** a well-parallelised "
-      "denoise. On an idle node the primary volume (PNC001-UNIT1) denoised in ≈ 248 s at "
-      "16 threads (noise ≈ 135 s + denoise ≈ 113 s) versus mincnlm `-mt 6` ≈ 366 s — i.e. "
-      "pyonlm was *faster* there. The scaling curve below shows the denoise step's parallel "
-      "behaviour directly.\n")
+      "denoise. The clean re-measurement below (idle-ish node) shows the representative "
+      "picture; the scaling curve isolates the denoise step's parallel behaviour.\n")
     if "timing.png" in figs:
         A("![timing](figures/timing.png)\n")
+    if clean:
+        cm = clean["t_mincnlm_mt6"]; cn = clean["t_pyonlm_noise"]
+        A("### Representative timing (idle-ish node)\n")
+        A(f"Re-measured on the primary volume (PNC001-UNIT1) once the node was much less "
+          f"loaded (1-min load ≈ {clean.get('load_before_mincnlm', 0):.0f}/128). Here "
+          f"mincnlm `-mt {mt}` clocks {cm:.0f} s; pyonlm's serial noise-estimate is a fixed "
+          f"{cn:.0f} s and its denoise scales with threads:\n")
+        A("| run | noise (s) | denoise (s) | total (s) | vs mincnlm-mt6 |")
+        A("|---|---|---|---|---|")
+        A(f"| mincnlm -mt{mt} | — | — | {cm:.0f} | 1.00× |")
+        for n in (6, 16, 32):
+            dsn = clean[f"t_pyonlm_denoise_mt{n}"]; tot = cn + dsn
+            A(f"| pyonlm -mt{n} | {cn:.0f} | {dsn:.0f} | {tot:.0f} | {cm/tot:.2f}× |")
+        A("\npyonlm is on par with mincnlm at 6 threads and faster at 16–32; unlike mincnlm "
+          "it can use all available cores. The single-threaded noise-estimate is the main "
+          "remaining fixed cost (and an obvious optimisation target).\n")
+        if "timing_clean.png" in figs:
+            A("![timing (clean)](figures/timing_clean.png)\n")
     if "scaling.png" in figs and S:
         A("### Thread scaling\n")
-        sh = b.get("scale_shape")
+        sh = (clean.get("scale_shape") if clean else None) or b.get("scale_shape")
+        t1 = S[0]["denoise_s"]; tN = S[-1]["denoise_s"]
         A(f"Denoise-only wall time on a {'×'.join(map(str,sh)) if sh else ''} brain "
-          "crop (noise estimate is a fixed one-off, excluded here):\n")
+          "crop (the noise estimate is a fixed one-off, excluded here):\n")
         A("| threads | denoise (s) | speedup |")
         A("|---|---|---|")
-        t1 = S[0]["denoise_s"]
         for s in S:
             A(f"| {s['threads']} | {fmt(s['denoise_s'],2)} | {fmt(t1/s['denoise_s'],2)}× |")
-        A("\nThe denoise scales ≈9× from 1→32 threads. (One non-monotonic point can appear "
-          "under the shared-node contention noted above — e.g. an 8-thread run that lands "
-          "while other jobs spike; the overall trend is clear.)\n")
+        A(f"\nThe denoise scales ≈{t1/tN:.0f}× from {S[0]['threads']}→{S[-1]['threads']} threads.\n")
         A("![scaling](figures/scaling.png)\n")
 
     A("## Qualitative comparison\n")
@@ -160,4 +184,5 @@ def main(bench_path, fig_dir, out_path):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1], sys.argv[2], sys.argv[3])
+    main(sys.argv[1], sys.argv[2], sys.argv[3],
+         sys.argv[4] if len(sys.argv) > 4 else None)
